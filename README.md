@@ -42,57 +42,6 @@ opencode serve
 
 By default, OpenCode server runs on `http://localhost:4096`.
 
-### Kubernetes Deployment
-
-For production use in Kubernetes (where n8n is hosted):
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: opencode
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: opencode
-  template:
-    metadata:
-      labels:
-        app: opencode
-    spec:
-      containers:
-        - name: opencode
-          image: opencode/opencode:latest
-          args: ["serve"]
-          ports:
-            - containerPort: 4096
-          env:
-            - name: ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: opencode-secrets
-                  key: anthropic-api-key
-            - name: OPENAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: opencode-secrets
-                  key: openai-api-key
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: opencode-service
-spec:
-  selector:
-    app: opencode
-  ports:
-    - port: 4096
-      targetPort: 4096
-```
-
-Then configure the n8n node to use `http://opencode-service.default.svc.cluster.local:4096` as the base URL.
-
 ## Credentials
 
 This node requires OpenCode API credentials:
@@ -175,12 +124,11 @@ The node supports models from these providers:
 ## Features
 
 - ✅ Full LangChain integration
-- ✅ Streaming responses
-- ✅ Multiple model providers
-- ✅ Session management
-- ✅ Kubernetes-ready
+- ✅ Multiple model providers (Anthropic, OpenAI, Google, Groq, Ollama)
+- ✅ Session management with automatic cleanup
 - ✅ Tool calling support (via OpenCode's native capabilities)
-- ✅ File attachment support (for code analysis)
+- ✅ Comprehensive error handling and validation
+- ✅ TypeScript support with full type definitions
 
 ## Troubleshooting
 

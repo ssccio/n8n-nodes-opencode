@@ -273,6 +273,6 @@ Contributions are welcome! Please:
 
 For issues and questions:
 
-- [GitHub Issues](https://github.com/yourusername/n8n-nodes-opencode/issues)
+- [GitHub Issues](https://github.com/ssccio/n8n-nodes-opencode/issues)
 - [n8n Community Forum](https://community.n8n.io/)
 - [OpenCode Discord](https://discord.gg/opencode)

@@ -41,3 +41,6 @@ coverage/
 # Temporary files
 *.tmp
 temp/
+
+# MCP servers
+.playwright-mcp/

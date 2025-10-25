@@ -3,6 +3,8 @@ import type {
   INodeType,
   INodeTypeDescription,
   SupplyData,
+  ILoadOptionsFunctions,
+  INodePropertyOptions,
 } from "n8n-workflow";
 import { NodeConnectionTypes } from "n8n-workflow";
 import { OpenCodeChatModel } from "./OpenCodeChatModel";
@@ -47,23 +49,9 @@ export class LmChatOpenCode implements INodeType {
         type: "options",
         description: "The OpenCode agent to use",
         default: "build",
-        options: [
-          {
-            name: "Build",
-            value: "build",
-            description: "Agent for building and implementing features",
-          },
-          {
-            name: "Chat",
-            value: "chat",
-            description: "General chat agent",
-          },
-          {
-            name: "Debug",
-            value: "debug",
-            description: "Agent specialized for debugging",
-          },
-        ],
+        typeOptions: {
+          loadOptionsMethod: "getAgents",
+        },
       },
       {
         displayName: "Model Provider",
@@ -71,92 +59,18 @@ export class LmChatOpenCode implements INodeType {
         type: "options",
         description: "The model provider to use",
         default: "anthropic",
-        options: [
-          {
-            name: "Anthropic",
-            value: "anthropic",
-          },
-          {
-            name: "OpenAI",
-            value: "openai",
-          },
-          {
-            name: "Google",
-            value: "google",
-          },
-          {
-            name: "Groq",
-            value: "groq",
-          },
-          {
-            name: "Ollama",
-            value: "ollama",
-          },
-        ],
-      },
-      {
-        displayName: "Model ID",
-        name: "modelID",
-        type: "string",
-        description: "The specific model to use",
-        default: "claude-3-5-sonnet-20241022",
-        placeholder: "claude-3-5-sonnet-20241022",
-        displayOptions: {
-          show: {
-            providerID: ["anthropic"],
-          },
+        typeOptions: {
+          loadOptionsMethod: "getProviders",
         },
       },
       {
         displayName: "Model ID",
         name: "modelID",
-        type: "string",
+        type: "options",
         description: "The specific model to use",
-        default: "gpt-4-turbo",
-        placeholder: "gpt-4-turbo",
-        displayOptions: {
-          show: {
-            providerID: ["openai"],
-          },
-        },
-      },
-      {
-        displayName: "Model ID",
-        name: "modelID",
-        type: "string",
-        description: "The specific model to use",
-        default: "gemini-2.0-flash-exp",
-        placeholder: "gemini-2.0-flash-exp",
-        displayOptions: {
-          show: {
-            providerID: ["google"],
-          },
-        },
-      },
-      {
-        displayName: "Model ID",
-        name: "modelID",
-        type: "string",
-        description: "The specific model to use",
-        default: "llama-3.3-70b-versatile",
-        placeholder: "llama-3.3-70b-versatile",
-        displayOptions: {
-          show: {
-            providerID: ["groq"],
-          },
-        },
-      },
-      {
-        displayName: "Model ID",
-        name: "modelID",
-        type: "string",
-        description: "The specific model to use",
-        default: "qwen2.5-coder:32b",
-        placeholder: "qwen2.5-coder:32b",
-        displayOptions: {
-          show: {
-            providerID: ["ollama"],
-          },
+        default: "",
+        typeOptions: {
+          loadOptionsMethod: "getModels",
         },
       },
       {
@@ -199,6 +113,132 @@ export class LmChatOpenCode implements INodeType {
         ],
       },
     ],
+  };
+
+  methods = {
+    loadOptions: {
+      /**
+       * Fetches available providers from OpenCode API.
+       * Transforms the provider object keys into dropdown options.
+       * Returns empty array if server is unreachable.
+       */
+      async getProviders(
+        this: ILoadOptionsFunctions,
+      ): Promise<INodePropertyOptions[]> {
+        const credentials = await this.getCredentials("openCodeApi");
+        const baseUrl =
+          (credentials?.baseUrl as string) || "http://127.0.0.1:4096";
+        const apiKey = credentials?.apiKey as string | undefined;
+
+        try {
+          const response = await this.helpers.httpRequest({
+            method: "GET",
+            url: `${baseUrl}/config/providers`,
+            headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+          });
+
+          // Transform providers array to options
+          return response.providers
+            .map((provider: any) => ({
+              name: provider.name,
+              value: provider.id,
+            }))
+            .sort((a: INodePropertyOptions, b: INodePropertyOptions) =>
+              a.name.localeCompare(b.name),
+            );
+        } catch (error) {
+          console.warn(
+            "Failed to load providers from OpenCode:",
+            error instanceof Error ? error.message : String(error),
+          );
+          return [];
+        }
+      },
+
+      /**
+       * Fetches available agents from OpenCode API.
+       * Transforms the agents array into dropdown options.
+       * Returns empty array if server is unreachable.
+       */
+      async getAgents(
+        this: ILoadOptionsFunctions,
+      ): Promise<INodePropertyOptions[]> {
+        const credentials = await this.getCredentials("openCodeApi");
+        const baseUrl =
+          (credentials?.baseUrl as string) || "http://127.0.0.1:4096";
+        const apiKey = credentials?.apiKey as string | undefined;
+
+        try {
+          const response = await this.helpers.httpRequest({
+            method: "GET",
+            url: `${baseUrl}/agent`,
+            headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+          });
+
+          // Transform agents array to options
+          // Response is array of objects with 'name' field
+          return response
+            .map((agent: any) => ({
+              name: agent.name.charAt(0).toUpperCase() + agent.name.slice(1),
+              value: agent.name,
+            }))
+            .sort((a: INodePropertyOptions, b: INodePropertyOptions) =>
+              a.name.localeCompare(b.name),
+            );
+        } catch (error) {
+          console.warn(
+            "Failed to load agents from OpenCode:",
+            error instanceof Error ? error.message : String(error),
+          );
+          return [];
+        }
+      },
+
+      /**
+       * Fetches available models for the currently selected provider.
+       * Requires providerID parameter to be set.
+       * Returns empty array if no provider selected or server unreachable.
+       */
+      async getModels(
+        this: ILoadOptionsFunctions,
+      ): Promise<INodePropertyOptions[]> {
+        const credentials = await this.getCredentials("openCodeApi");
+        const baseUrl =
+          (credentials?.baseUrl as string) || "http://127.0.0.1:4096";
+        const apiKey = credentials?.apiKey as string | undefined;
+        const providerID = this.getCurrentNodeParameter("providerID") as string;
+
+        if (!providerID) {
+          return [];
+        }
+
+        try {
+          const response = await this.helpers.httpRequest({
+            method: "GET",
+            url: `${baseUrl}/config/providers`,
+            headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+          });
+
+          // Find provider in array and get models object
+          const provider = response.providers.find(
+            (p: any) => p.id === providerID,
+          );
+          const models = provider?.models || {};
+
+          // Convert models object keys to array
+          return Object.keys(models).map((modelId: string) => ({
+            name: modelId,
+            value: modelId,
+          }));
+        } catch (error) {
+          console.warn(
+            "Failed to load models from OpenCode:",
+            error instanceof Error ? error.message : String(error),
+          );
+          return [];
+        }
+      },
+    },
   };
 
   async supplyData(

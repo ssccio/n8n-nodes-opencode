@@ -1,14 +1,12 @@
 import {
   BaseChatModel,
   type BaseChatModelParams,
+  type BindToolsInput,
 } from "@langchain/core/language_models/chat_models";
 import { CallbackManagerForLLMRun } from "@langchain/core/callbacks/manager";
-import {
-  AIMessageChunk,
-  BaseMessage,
-  AIMessage,
-} from "@langchain/core/messages";
-import { ChatGenerationChunk, ChatResult } from "@langchain/core/outputs";
+import { BaseMessage, AIMessage } from "@langchain/core/messages";
+import { ChatResult } from "@langchain/core/outputs";
+import type { Runnable } from "@langchain/core/runnables";
 
 export interface OpenCodeChatModelInput extends BaseChatModelParams {
   baseUrl?: string;
@@ -34,20 +32,12 @@ interface OpenCodeMessagePart {
   mime?: string;
 }
 
-interface OpenCodeEvent {
-  type: string;
-  properties?: {
-    part?: OpenCodeMessagePart;
-    info?: {
-      status?: string;
-      cost?: number;
-    };
-    text?: string;
-  };
+interface OpenCodeMessageResponse {
+  parts: OpenCodeMessagePart[];
 }
 
 export class OpenCodeChatModel extends BaseChatModel {
-  baseUrl = "http://localhost:4096";
+  baseUrl = "http://127.0.0.1:4096";
   apiKey?: string;
   agent = "build";
   providerID = "anthropic";
@@ -91,23 +81,44 @@ export class OpenCodeChatModel extends BaseChatModel {
     return "opencode";
   }
 
+  // Declare that this model supports tool calling
+  // This is required for n8n AI Agent to recognize tool support
+  get supportsToolCalling(): boolean {
+    return true;
+  }
+
+  // Implement bindTools to enable tool calling functionality
+  // This method is called by LangChain when tools are bound to the model
+  bindTools(
+    _tools: BindToolsInput[],
+    _kwargs?: Partial<this["ParsedCallOptions"]>,
+  ): Runnable {
+    // Return a runnable that includes the bound tools
+    // OpenCode handles tools internally, so we just return this model instance
+    return this as unknown as Runnable;
+  }
+
   async _generate(
     messages: BaseMessage[],
     _options: this["ParsedCallOptions"],
     runManager?: CallbackManagerForLLMRun,
   ): Promise<ChatResult> {
-    // Create fresh session for this execution
-    const sessionId = await this.createSession();
+    let sessionId: string | undefined;
 
     try {
+      // Create fresh session for this execution
+      sessionId = await this.createSession();
+
       // Convert messages to OpenCode prompt format
       const promptParts = this.convertMessagesToPromptParts(messages);
 
-      // Send prompt to OpenCode
-      await this.sendPrompt(sessionId, promptParts);
+      // Send prompt to OpenCode and get response directly
+      const responseText = await this.sendPrompt(sessionId, promptParts);
 
-      // Collect response from event stream
-      const responseText = await this.collectResponse(sessionId, runManager);
+      // Notify callback manager if provided
+      if (runManager) {
+        await runManager.handleLLMNewToken(responseText);
+      }
 
       return {
         generations: [
@@ -118,33 +129,15 @@ export class OpenCodeChatModel extends BaseChatModel {
         ],
       };
     } finally {
-      // Clean up session after execution
-      await this.deleteSession(sessionId);
+      // Clean up session after execution if one was created
+      if (sessionId) {
+        await this.deleteSession(sessionId);
+      }
     }
   }
 
-  async *_streamResponseChunks(
-    messages: BaseMessage[],
-    _options: this["ParsedCallOptions"],
-    runManager?: CallbackManagerForLLMRun,
-  ): AsyncGenerator<ChatGenerationChunk> {
-    // Create fresh session for this execution
-    const sessionId = await this.createSession();
-
-    try {
-      // Convert messages to OpenCode prompt format
-      const promptParts = this.convertMessagesToPromptParts(messages);
-
-      // Send prompt to OpenCode
-      await this.sendPrompt(sessionId, promptParts);
-
-      // Stream response from event stream
-      yield* this.streamResponse(sessionId, runManager);
-    } finally {
-      // Clean up session after execution
-      await this.deleteSession(sessionId);
-    }
-  }
+  // Streaming is not implemented - OpenCode API returns complete responses
+  // LangChain will automatically fall back to using _generate for streaming calls
 
   private async createSession(): Promise<string> {
     const headers: Record<string, string> = {
@@ -179,8 +172,23 @@ export class OpenCodeChatModel extends BaseChatModel {
         );
       }
 
-      const session = (await response.json()) as OpenCodeSession;
+      // Validate response structure
+      const data: any = await response.json();
+      if (typeof data?.id !== "string") {
+        throw new Error(
+          'Failed to create session: API response is missing or has an invalid "id" field',
+        );
+      }
+
+      const session = data as OpenCodeSession;
       return session.id;
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(
+          `Request to create session timed out after ${this.requestTimeout / 1000} seconds`,
+        );
+      }
+      throw error;
     } finally {
       clearTimeout(timeoutId);
     }
@@ -223,7 +231,7 @@ export class OpenCodeChatModel extends BaseChatModel {
   private async sendPrompt(
     sessionId: string,
     parts: OpenCodeMessagePart[],
-  ): Promise<void> {
+  ): Promise<string> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
@@ -236,12 +244,30 @@ export class OpenCodeChatModel extends BaseChatModel {
     const timeoutId = setTimeout(() => controller.abort(), this.requestTimeout);
 
     try {
+      // Build request body with optional parameters
+      const body: Record<string, any> = {
+        parts,
+        model: {
+          providerID: this.providerID,
+          modelID: this.modelID,
+        },
+        agent: this.agent,
+      };
+
+      // Add optional model parameters if specified
+      if (this.temperature !== undefined) {
+        body.temperature = this.temperature;
+      }
+      if (this.maxTokens !== undefined) {
+        body.max_tokens = this.maxTokens;
+      }
+
       const response = await fetch(
-        `${this.baseUrl}/session/${sessionId}/prompt`,
+        `${this.baseUrl}/session/${sessionId}/message`,
         {
           method: "POST",
           headers,
-          body: JSON.stringify({ parts }),
+          body: JSON.stringify(body),
           signal: controller.signal,
         },
       );
@@ -252,116 +278,41 @@ export class OpenCodeChatModel extends BaseChatModel {
           `Failed to send prompt to OpenCode (${response.status}): ${errorBody}`,
         );
       }
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  }
 
-  private async collectResponse(
-    sessionId: string,
-    runManager?: CallbackManagerForLLMRun,
-  ): Promise<string> {
-    const chunks: string[] = [];
-
-    for await (const chunk of this.streamResponse(sessionId, runManager)) {
-      if (chunk.text) {
-        chunks.push(chunk.text);
+      // Parse the response and validate structure
+      const data: any = await response.json();
+      if (!data || !Array.isArray(data.parts)) {
+        throw new Error(
+          'Invalid response from OpenCode: missing or invalid "parts" field',
+        );
       }
-    }
 
-    return chunks.join("");
-  }
+      const responseData = data as OpenCodeMessageResponse;
+      const textParts: string[] = [];
 
-  private async *streamResponse(
-    _sessionId: string,
-    runManager?: CallbackManagerForLLMRun,
-  ): AsyncGenerator<ChatGenerationChunk> {
-    const headers: Record<string, string> = {};
-
-    if (this.apiKey) {
-      headers["Authorization"] = `Bearer ${this.apiKey}`;
-    }
-
-    // Note: No timeout for SSE stream as it's expected to be long-lived
-    const response = await fetch(`${this.baseUrl}/event`, {
-      headers,
-    });
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(
-        `Failed to connect to OpenCode event stream (${response.status}): ${errorBody}`,
-      );
-    }
-
-    if (!response.body) {
-      throw new Error("Response body is null");
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6);
-            if (data === "[DONE]") {
-              return;
-            }
-
-            try {
-              const event: OpenCodeEvent = JSON.parse(data);
-
-              // Handle message.part.updated events
-              if (
-                event.type === "message.part.updated" &&
-                event.properties?.part
-              ) {
-                const part = event.properties.part;
-
-                if (part.type === "text" && part.text) {
-                  const chunk = new ChatGenerationChunk({
-                    text: part.text,
-                    message: new AIMessageChunk(part.text),
-                  });
-
-                  yield chunk;
-
-                  await runManager?.handleLLMNewToken(part.text);
-                }
-              }
-
-              // Handle session.updated to detect completion
-              if (
-                event.type === "session.updated" &&
-                event.properties?.info?.status === "completed"
-              ) {
-                return;
-              }
-            } catch (error) {
-              // Log malformed SSE data for debugging
-              console.warn(`Skipping malformed SSE data: "${data}"`, error);
-              continue;
-            }
-          }
+      for (const part of responseData.parts) {
+        if (part.type === "text" && part.text) {
+          textParts.push(part.text);
         }
       }
+
+      // Ensure we got some text content back
+      if (textParts.length === 0) {
+        throw new Error(
+          "OpenCode API returned a response with no text content",
+        );
+      }
+
+      return textParts.join("");
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(
+          `Request to send prompt timed out after ${this.requestTimeout / 1000} seconds`,
+        );
+      }
+      throw error;
     } finally {
-      // Cancel the stream to prevent resource leaks if consumer stops iterating
-      await reader.cancel().catch(() => {
-        // Ignore cancellation errors during cleanup
-      });
-      reader.releaseLock();
+      clearTimeout(timeoutId);
     }
   }
 
@@ -384,12 +335,24 @@ export class OpenCodeChatModel extends BaseChatModel {
           headers,
           signal: controller.signal,
         });
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          console.warn(
+            `Session deletion timed out after ${this.requestTimeout / 1000} seconds for session ${sessionId}`,
+          );
+        } else {
+          // Log cleanup errors for monitoring but don't throw
+          console.warn(
+            `Failed to clean up OpenCode session ${sessionId}:`,
+            error,
+          );
+        }
       } finally {
         clearTimeout(timeoutId);
       }
     } catch (error) {
-      // Log cleanup errors for monitoring but don't throw
-      console.warn(`Failed to clean up OpenCode session ${sessionId}:`, error);
+      // Log any outer errors but don't throw
+      console.warn(`Error during session cleanup for ${sessionId}:`, error);
     }
   }
 

@@ -220,17 +220,22 @@ describe("OpenCodeChatModel", () => {
 
   describe("Prompt Sending", () => {
     it("should send prompt to correct endpoint", async () => {
-      mockFetch.mockResolvedValueOnce({ ok: true });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          parts: [{ type: "text", text: "Response text" }],
+        }),
+      });
 
       const parts = [{ type: "text", text: "Test prompt" }];
       await (model as any).sendPrompt("session-123", parts);
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:4096/session/session-123/prompt",
+        "http://localhost:4096/session/session-123/message",
         expect.objectContaining({
           method: "POST",
           signal: expect.any(AbortSignal),
-          body: JSON.stringify({ parts }),
+          body: expect.stringContaining('"parts"'),
         }),
       );
     });

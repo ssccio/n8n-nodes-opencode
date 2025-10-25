@@ -1,0 +1,60 @@
+repos:
+  # Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^tests/snapshots/
+      - id: end-of-file-fixer
+        exclude: ^tests/snapshots/
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  # ESLint for TypeScript/JavaScript linting
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v9.38.0
+    hooks:
+      - id: eslint
+        files: \.(js|ts|tsx)$
+        types: [file]
+        args: ["--fix"]
+        additional_dependencies:
+          - eslint@8.56.0
+          - "@typescript-eslint/parser@7.0.0"
+          - "@typescript-eslint/eslint-plugin@7.0.0"
+          - eslint-plugin-n8n-nodes-base@1.16.1
+
+  # TypeScript type checking
+  - repo: local
+    hooks:
+      - id: typescript-check
+        name: TypeScript type check
+        entry: npm run type-check
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  # Run tests before commit
+  - repo: local
+    hooks:
+      - id: jest-tests
+        name: Run Jest tests
+        entry: npm test
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+  # Markdown linting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.45.0
+    hooks:
+      - id: markdownlint
+        args: ["--fix"]
+        exclude: ^node_modules/

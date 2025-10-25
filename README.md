@@ -78,35 +78,97 @@ This node requires OpenCode API credentials:
 
 ## Supported Models
 
-The node supports models from these providers:
+The node supports models from these providers (via [models.dev](https://models.dev)):
 
 ### Anthropic
 
+- `claude-sonnet-4-5-20250929` (latest)
+- `claude-sonnet-4-20250514`
+- `claude-3-7-sonnet-20250219`
 - `claude-3-5-sonnet-20241022`
-- `claude-3-opus-20240229`
-- `claude-3-sonnet-20240229`
+- `claude-3-5-sonnet-20240620`
+- `claude-opus-4-1-20250805`
+- `claude-opus-4-20250514`
+- `claude-haiku-4-5-20251001`
+- `claude-3-5-haiku-20241022`
 
 ### OpenAI
 
+- `gpt-5` (latest)
+- `gpt-5-mini`
+- `gpt-5-nano`
+- `o3`
+- `o3-mini`
+- `gpt-4.1`
+- `gpt-4.1-mini`
+- `gpt-4o`
+- `gpt-4o-mini`
+- `o1`
+- `o1-mini`
 - `gpt-4-turbo`
-- `gpt-4`
-- `gpt-3.5-turbo`
 
 ### Google
 
-- `gemini-2.0-flash-exp`
-- `gemini-pro`
+- `gemini-2.5-pro` (latest)
+- `gemini-2.5-flash`
+- `gemini-2.5-flash-lite`
+- `gemini-2.0-flash`
+- `gemini-2.0-flash-lite`
+- `gemini-1.5-pro`
+- `gemini-1.5-flash`
+- `gemini-1.5-flash-8b`
 
 ### Groq
 
 - `llama-3.3-70b-versatile`
-- `mixtral-8x7b-32768`
+- `llama3-70b-8192`
+- `llama-3.1-8b-instant`
+- `qwen-qwq-32b`
+- `mistral-saba-24b`
+- `gemma2-9b-it`
+
+### Mistral
+
+- `mistral-large-latest`
+- `mistral-medium-latest`
+- `mistral-small-latest`
+- `pixtral-large-latest`
+- `codestral-latest`
+- `ministral-8b-latest`
+- `ministral-3b-latest`
+
+### Meta (Llama)
+
+- `llama-4-maverick-17b`
+- `llama-4-scout-17b`
+- `llama-3.3-70b-instruct`
+- `llama-3.2-1b-instruct`
+- `llama-3.1-70b-instruct`
+- `llama-3.1-8b-instruct`
+
+### DeepSeek
+
+- `deepseek-chat`
+- `deepseek-reasoner`
+
+### Alibaba (Qwen)
+
+- `qwen3-max`
+- `qwen3-32b`
+- `qwen3-14b`
+- `qwen3-8b`
+- `qwen-max`
+- `qwen-plus`
+
+### Moonshot AI (Kimi)
+
+- `kimi-k2-0905-preview`
+- `kimi-k2-0711-preview`
 
 ### Ollama (Self-hosted)
 
-- `qwen2.5-coder:32b`
-- `codellama:34b`
 - Any model available in your Ollama instance
+- Examples: `qwen2.5-coder:32b`, `codellama:34b`, `llama3:70b`
 
 ## Configuration Options
 
